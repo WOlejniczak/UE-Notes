@@ -52,8 +52,9 @@ function render(text, reserved) {
 }
 function fail(msg) { view.textContent = msg; }
 
-const name = new URLSearchParams(location.search).get('bp');
-const packed = new URLSearchParams(location.hash.slice(1)).get('d');
+const params = new URLSearchParams(location.search);
+const name = params.get('bp');
+const packed = params.get('d') || new URLSearchParams(location.hash.slice(1)).get('d');
 
 if (name) {
   tools.classList.add('hidden');
@@ -65,15 +66,18 @@ if (name) {
 } else if (packed) {
   tools.classList.add('hidden');
   unpack(packed).then(t => render(t, 0)).catch(e => fail('Niepoprawny link: ' + e.message));
+} else if (window.self !== window.top) {
+  tools.classList.add('hidden');
+  fail('Brak blueprintu w linku (użyj ?bp=nazwa lub ?d=...)');
 } else {
   const src = document.getElementById('src');
   const linkBtn = document.getElementById('link');
   src.addEventListener('input', () => render(src.value, tools.offsetHeight));
   linkBtn.onclick = async () => {
     if (!src.value.trim()) return;
-    const url = location.origin + location.pathname + '#d=' + await pack(src.value);
+    const url = location.origin + location.pathname + '?d=' + await pack(src.value);
     await navigator.clipboard.writeText(url);
-    linkBtn.textContent = url.length > 8000
+    linkBtn.textContent = url.length > 6000
       ? `Skopiowano (${url.length} zn. – długi, lepiej plik)`
       : `Skopiowano (${url.length} zn.)`;
     setTimeout(() => linkBtn.textContent = 'Kopiuj link do Notion', 3000);
