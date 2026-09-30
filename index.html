@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Blueprint viewer</title>
+<link rel="stylesheet" href="bue-render/render.css">
+<style>
+  html,body{margin:0;height:100%;background:#1a1c1f;color:#ddd;font:14px system-ui,sans-serif}
+  #tools{display:flex;gap:8px;padding:8px;height:92px;box-sizing:border-box;align-items:stretch}
+  #src{flex:1;resize:none}
+  #btns{display:flex;flex-direction:column;gap:6px}
+  #msg{padding:0 8px;height:0}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div id="tools">
+  <textarea id="src" placeholder="Wklej blueprint z UE (Ctrl+V)"></textarea>
+  <div id="btns">
+    <button id="link">Kopiuj link do Notion</button>
+    <button id="save">Pobierz .txt</button>
+  </div>
+</div>
+<div id="view"></div>
+<script src="bue-render/render.js"></script>
+<script>
+const view = document.getElementById('view');
+const tools = document.getElementById('tools');
+
+const b64u = {
+  enc(u) {
+    let s = '';
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  },
+  dec(s) {
+    return Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  }
+};
+async function pack(text) {
+  const r = new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('deflate-raw')));
+  return b64u.enc(new Uint8Array(await r.arrayBuffer()));
+}
+async function unpack(s) {
+  return new Response(new Blob([b64u.dec(s)]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+}
+function render(text, reserved) {
+  view.replaceChildren();
+  new window.blueprintUE.render.Main(text, view, { height: (innerHeight - reserved) + 'px' }).start();
+}
+function fail(msg) { view.textContent = msg; }
+
+const name = new URLSearchParams(location.search).get('bp');
+const packed = new URLSearchParams(location.hash.slice(1)).get('d');
+
+if (name) {
+  tools.classList.add('hidden');
+  if (!/^[\w-]+$/.test(name)) fail('Niepoprawna nazwa');
+  else fetch(`bp/${name}.txt`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(t => render(t, 0))
+    .catch(e => fail('Nie wczytano: ' + e.message));
+} else if (packed) {
+  tools.classList.add('hidden');
+  unpack(packed).then(t => render(t, 0)).catch(e => fail('Niepoprawny link: ' + e.message));
+} else {
+  const src = document.getElementById('src');
+  const linkBtn = document.getElementById('link');
+  src.addEventListener('input', () => render(src.value, tools.offsetHeight));
+  linkBtn.onclick = async () => {
+    if (!src.value.trim()) return;
+    const url = location.origin + location.pathname + '#d=' + await pack(src.value);
+    await navigator.clipboard.writeText(url);
+    linkBtn.textContent = url.length > 8000
+      ? `Skopiowano (${url.length} zn. – długi, lepiej plik)`
+      : `Skopiowano (${url.length} zn.)`;
+    setTimeout(() => linkBtn.textContent = 'Kopiuj link do Notion', 3000);
+  };
+  document.getElementById('save').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([src.value], { type: 'text/plain' }));
+    a.download = 'blueprint.txt';
+    a.click();
+  };
+}
+</script>
+</body>
+</html>
