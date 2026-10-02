@@ -39,6 +39,7 @@
 <script>
 const view = document.getElementById('view');
 const tools = document.getElementById('tools');
+const VERSION = 'v5 (podgląd na żywo)';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 
 const owner = location.hostname.split('.')[0];
@@ -131,10 +132,18 @@ function initEditPanel(slug, initialText) {
   const isOpen = () => panel.style.display === 'flex';
   const redraw = () => {
     const text = (isOpen() && preview) || saved;
-    if (text) { try { render(text, isOpen() ? panel.offsetHeight : 0); } catch (e) { /* niepełny kod */ } }
+    if (!text) return;
+    try { render(text, isOpen() ? panel.offsetHeight : 0); }
+    catch (e) { st.textContent = 'Błąd podglądu: ' + e.message; }
   };
   const show = on => { panel.style.display = on ? 'flex' : 'none'; if (on) { syncToken(); ta.focus(); } redraw(); };
-  ta.addEventListener('input', () => { preview = ta.value.trim() ? ta.value : null; redraw(); });
+  st.textContent = 'wersja strony: ' + VERSION;
+  window.addEventListener('error', e => { if (isOpen()) st.textContent = 'Błąd: ' + e.message; });
+  ta.addEventListener('input', () => {
+    preview = ta.value.trim() ? ta.value : null;
+    st.textContent = preview ? `Podgląd niezapisanego kodu: ${ta.value.length} znaków` : 'wersja strony: ' + VERSION;
+    redraw();
+  });
   toggle.onclick = () => show(!isOpen());
   $('ehd').onclick = () => show(false);
   $('ecl').onclick = () => { ta.value = ''; preview = null; redraw(); ta.focus(); };
