@@ -39,7 +39,7 @@
 <script>
 const view = document.getElementById('view');
 const tools = document.getElementById('tools');
-const VERSION = 'v5 (podgląd na żywo)';
+const VERSION = 'v6 (poprawiony zapis)';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 
 const owner = location.hostname.split('.')[0];
@@ -74,18 +74,20 @@ function render(text, reserved) {
 }
 function fail(msg) { view.textContent = msg; }
 
+async function getSha(path, headers) {
+  const dir = path.split('/').slice(0, -1).join('/');
+  const r = await fetch(`${gh(dir)}?cb=${Date.now()}`, { headers, cache: 'no-store' });
+  if (r.status === 401 || r.status === 403) throw Object.assign(new Error('token odrzucony'), { auth: true });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('GitHub: ' + r.status);
+  const list = await r.json();
+  const f = Array.isArray(list) ? list.find(x => x.path === path) : null;
+  return f ? f.sha : null;
+}
 async function saveToRepo(path, text, token, confirmOverwrite) {
   const headers = ghHeaders(token);
-  const ex = await fetch(gh(path), { headers });
-  let sha;
-  if (ex.status === 200) {
-    if (confirmOverwrite && !(await confirmOverwrite())) return 'cancelled';
-    sha = (await ex.json()).sha;
-  } else if (ex.status === 401 || ex.status === 403) {
-    throw Object.assign(new Error('token odrzucony'), { auth: true });
-  } else if (ex.status !== 404) {
-    throw new Error('GitHub: ' + ex.status);
-  }
+  const sha = await getSha(path, headers);
+  if (sha && confirmOverwrite && !(await confirmOverwrite())) return 'cancelled';
   const label = path.replace(/^bp\//, '').replace(/\.txt$/, '');
   const put = await fetch(gh(path), {
     method: 'PUT',
@@ -211,7 +213,7 @@ if (name) {
 
   async function loadList(selected) {
     try {
-      const r = await fetch(gh('bp'), { headers: ghHeaders(store.get('gh_token')) });
+      const r = await fetch(`${gh('bp')}?cb=${Date.now()}`, { headers: ghHeaders(store.get('gh_token')), cache: 'no-store' });
       if (!r.ok) throw new Error(r.status);
       const names = (await r.json()).filter(f => f.type === 'file' && f.name.endsWith('.txt')).map(f => f.name.replace(/\.txt$/, ''));
       sel.replaceChildren(new Option('— nowy blueprint —', ''), ...names.map(n => new Option(n, n)));
@@ -221,7 +223,7 @@ if (name) {
   sel.onchange = async () => {
     if (!sel.value) { src.value = ''; nameEl.value = ''; out.textContent = ''; view.replaceChildren(); return; }
     out.textContent = 'Wczytuję…';
-    const r = await fetch(gh(`bp/${sel.value}.txt`), { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' } });
+    const r = await fetch(`${gh(`bp/${sel.value}.txt`)}?cb=${Date.now()}`, { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
     if (!r.ok) { out.textContent = 'Błąd: ' + r.status; return; }
     src.value = await r.text();
     nameEl.value = sel.value;
