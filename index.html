@@ -7,7 +7,7 @@
 <title>Blueprint viewer</title>
 <link rel="stylesheet" href="bue-render/render.css">
 <style>
-  :root{--bg:#120d19;--surface:#1b1326;--surface2:#241a33;--border:#3a2a52;--text:#efe9f8;--muted:#a898bf;--accent:#6D00AB;--accent2:#a233e6;--dw:400px}
+  :root{color-scheme:dark;--bg:#120d19;--surface:#1b1326;--surface2:#241a33;--border:#3a2a52;--text:#efe9f8;--muted:#a898bf;--accent:#6D00AB;--accent2:#a233e6;--dw:400px}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 85% -10%,#2a0f45 0%,transparent 60%),var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
   #view{transition:margin-right .25s ease}
@@ -29,6 +29,10 @@
   label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   input,select,textarea{width:100%;font:inherit;font-size:13.5px;letter-spacing:0;text-transform:none;color:var(--text);background:#0f0a16;border:1px solid var(--border);border-radius:11px;padding:9px 11px;outline:none;transition:border-color .15s,box-shadow .15s}
   input:focus,select:focus,textarea:focus{border-color:var(--accent2);box-shadow:0 0 0 3px #a233e633}
+  select{appearance:none;-webkit-appearance:none;padding:9px 34px 9px 11px;cursor:pointer;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23a898bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 12px center}
+  select option,select optgroup{background:#1b1326;color:#efe9f8;font:13.5px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:0;text-transform:none}
+  select optgroup{color:#c9a8f5;font-weight:600;font-style:normal}
+  select option:checked{background:#6D00AB;color:#fff}
   textarea{min-height:150px;resize:vertical;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .path{font:12px ui-monospace,monospace;color:#c9a8f5;word-break:break-all;min-height:16px}
@@ -46,6 +50,8 @@
   .msg.error{background:#2a0f17;border-color:#ff5a72;color:#ffc2cc}
   .msg.ok{background:#0f2a1b;border-color:#3ddc84;color:#b8f2d0}
   .msg.info{background:#22143a;border-color:#8a3ffc;color:#e0d0ff}
+  .msg.warn{background:#2a2108;border-color:#f0b429;color:#ffe29a}
+  #hint{position:static;box-shadow:none}
   .confirm{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:#0a0610c8;backdrop-filter:blur(3px)}
   .cbox{background:var(--surface2);border:1px solid var(--accent2);border-radius:16px;padding:18px;box-shadow:0 20px 60px #000a}
   .cbox p{margin:0 0 14px;word-break:break-word}
@@ -56,7 +62,7 @@
 <div id="view"></div>
 <script src="bue-render/render.js"></script>
 <script>
-const VERSION = 'v8';
+const VERSION = 'v9';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 const view = document.getElementById('view');
 
@@ -154,7 +160,7 @@ async function waitLive(rel, text, tries = 48) {
 
 /* ---------- Edytor (szuflada z prawej) ---------- */
 function initDrawer(rel, text, openNow) {
-  let saved = text || '', preview = null, current = text ? { rel } : null, files = [], pubSeq = 0;
+  let saved = text || '', preview = null, current = text ? { rel } : null, files = [], pubSeq = 0, listLoaded = false;
 
   document.body.insertAdjacentHTML('beforeend', `
     <button id="btn-edit" class="fab" title="Pokaż/ukryj edytor">✎</button>
@@ -167,6 +173,7 @@ function initDrawer(rel, text, openNow) {
       </header>
       <div class="dbody">
         <div id="msg" class="msg hidden"><span class="ic"></span><span class="tx"></span><button class="mx" title="Ukryj">✕</button></div>
+        <div id="hint" class="msg warn hidden"><span class="ic">!</span><span class="tx"></span><button class="mx" title="Ukryj">✕</button></div>
         <label>Istniejący blueprint<select id="f-existing"><option value="">— nowy blueprint —</option></select></label>
         <div class="grid2">
           <label>Podfolder w bp/<select id="f-folder"><option value="">(główny: bp/)</option><option value="__new">+ nowy podfolder…</option></select></label>
@@ -199,6 +206,10 @@ function initDrawer(rel, text, openNow) {
   };
   const hideMsg = () => { msgEl.className = 'msg hidden'; };
   msgEl.querySelector('.mx').onclick = hideMsg;
+  const hintEl = $('hint');
+  const hideHint = () => hintEl.classList.add('hidden');
+  const showHint = textHint => { hintEl.querySelector('.tx').textContent = textHint; hintEl.classList.remove('hidden'); };
+  hintEl.querySelector('.mx').onclick = hideHint;
   const askConfirm = (question, okLabel) => new Promise(res => {
     confirmEl.querySelector('p').textContent = question;
     $('c-ok').textContent = okLabel || 'OK';
@@ -237,7 +248,7 @@ function initDrawer(rel, text, openNow) {
   }
 
   async function loadList(selectRel) {
-    try { files = await fetchTree(ghHeaders(store.get('gh_token'))); } catch { return; }
+    try { files = await fetchTree(ghHeaders(store.get('gh_token'))); listLoaded = true; } catch { return; }
     const dirOf = f => (f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '');
     const groups = {};
     files.forEach(f => (groups[dirOf(f)] ||= []).push(f));
@@ -280,7 +291,12 @@ function initDrawer(rel, text, openNow) {
     if (!t.name) return msg('error', 'Najpierw wpisz nazwę.');
     const link = `${base}?bp=${t.rel}`;
     await navigator.clipboard.writeText(link).catch(() => {});
-    msg('info', `Link: ${link} (plik bp/${t.rel}.txt musi być zapisany w repo)`);
+    msg('ok', `Link skopiowany: ${link}`);
+    if (listLoaded && !files.some(f => f.rel === t.rel))
+      showHint(`Blueprint „${t.rel}” nie jest jeszcze zapisany w repozytorium. Link zadziała dopiero po kliknięciu „Zapisz na GitHubie”.`);
+    else if (preview)
+      showHint('Masz niezapisany kod w polu. Link pokaże wersję z repozytorium, dopóki nie klikniesz „Zapisz na GitHubie”.');
+    else hideHint();
   };
   $('btn-edit').onclick = () => setOpen(!isOpen());
   $('btn-close').onclick = () => setOpen(false);
@@ -299,6 +315,7 @@ function initDrawer(rel, text, openNow) {
     const token = store.get('gh_token') || tokenEl.value.trim();
     if (!token) { tokenWrap.classList.remove('hidden'); tokenEl.focus(); return msg('error', 'Podaj token GitHub.'); }
     saveBtn.disabled = true;
+    hideHint();
     try {
       msg('info', 'Sprawdzam repozytorium…');
       files = await fetchTree(ghHeaders(token));
