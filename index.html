@@ -14,8 +14,9 @@
   #name{width:180px}
   #out{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
   .hidden{display:none !important}
-  #etoggle{position:fixed;left:8px;bottom:8px;z-index:9999;width:32px;height:32px;border-radius:6px;border:1px solid #444;background:#2a2c31;color:#ddd;cursor:pointer;opacity:.55}
-  #etoggle:hover{opacity:1}
+  #etoggle,#ereload{position:fixed;left:8px;bottom:8px;z-index:9999;width:32px;height:32px;border-radius:6px;border:1px solid #444;background:#2a2c31;color:#ddd;cursor:pointer;opacity:.55}
+  #ereload{left:46px}
+  #etoggle:hover,#ereload:hover{opacity:1}
   #epanel{position:relative;z-index:9998;background:#1a1c1ff2;border-bottom:1px solid #444;padding:8px;display:none;flex-direction:column;gap:6px;box-sizing:border-box}
   #epanel textarea{height:80px;resize:vertical}
   #epanel .r{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
@@ -39,7 +40,7 @@
 <script>
 const view = document.getElementById('view');
 const tools = document.getElementById('tools');
-const VERSION = 'v6 (poprawiony zapis)';
+const VERSION = 'v7 (przycisk odśwież)';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 
 const owner = location.hostname.split('.')[0];
@@ -127,7 +128,12 @@ function initEditPanel(slug, initialText) {
     </div>
     <div id="est"></div>`;
   document.body.insertBefore(panel, view);
-  document.body.append(toggle);
+  const reload = document.createElement('button');
+  reload.id = 'ereload';
+  reload.textContent = '↻';
+  reload.title = 'Odśwież embed (pobierz najnowszą wersję strony i blueprintu)';
+  reload.onclick = () => location.reload();
+  document.body.append(toggle, reload);
   const $ = id => panel.querySelector('#' + id);
   const ta = $('eta'), tk = $('etk'), st = $('est'), sv = $('esv');
   const syncToken = () => { tk.style.display = store.get('gh_token') ? 'none' : ''; };
@@ -185,7 +191,7 @@ const packed = params.get('d') || new URLSearchParams(location.hash.slice(1)).ge
 if (name) {
   tools.classList.add('hidden');
   if (!/^[\w-]+$/.test(name)) fail('Niepoprawna nazwa');
-  else fetch(`bp/${name}.txt`)
+  else fetch(`bp/${name}.txt?cb=${Date.now()}`, { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
     .then(t => { render(t, 0); initEditPanel(name, t); })
     .catch(e => { fail('Nie wczytano: ' + e.message); initEditPanel(name); });
