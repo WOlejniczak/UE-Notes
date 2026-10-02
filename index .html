@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Blueprint viewer</title>
+<link rel="stylesheet" href="bue-render/render.css">
+<style>
+  html,body{margin:0;height:100%;background:#1a1c1f;color:#ddd;font:14px system-ui,sans-serif}
+  #tools{display:flex;flex-direction:column;gap:6px;padding:8px;box-sizing:border-box}
+  #src{height:70px;resize:vertical}
+  #row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  #name{width:180px}
+  #out{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
+  .hidden{display:none !important}
+</style>
+</head>
+<body>
+<div id="tools">
+  <textarea id="src" placeholder="Wklej blueprint z UE (Ctrl+V)"></textarea>
+  <div id="row">
+    <input id="name" placeholder="nazwa (np. drzwi)">
+    <button id="commit"><b>Zapisz na GitHubie i kopiuj link</b></button>
+    <button id="forget" title="Usuwa zapamiętany token GitHub z tej przeglądarki">Wyloguj token</button>
+  </div>
+  <div id="out"></div>
+</div>
+<div id="view"></div>
+<script src="bue-render/render.js"></script>
+<script>
+const view = document.getElementById('view');
+const tools = document.getElementById('tools');
+const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
+
+const b64u = {
+  dec(s) { return Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)); }
+};
+async function unpack(s) {
+  return new Response(new Blob([b64u.dec(s)]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+}
+function render(text, reserved) {
+  view.replaceChildren();
+  new window.blueprintUE.render.Main(text, view, { height: (innerHeight - reserved) + 'px' }).start();
+}
+function fail(msg) { view.textContent = msg; }
+function toB64(str) {
+  const u = new TextEncoder().encode(str);
+  let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const params = new URLSearchParams(location.search);
+const name = params.get('bp');
+const id = params.get('id');
+const packed = params.get('d') || new URLSearchParams(location.hash.slice(1)).get('d');
+
+if (name) {
+  tools.classList.add('hidden');
+  if (!/^[\w-]+$/.test(name)) fail('Niepoprawna nazwa');
+  else fetch(`bp/${name}.txt`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(t => render(t, 0))
+    .catch(e => fail('Nie wczytano: ' + e.message));
+} else if (id) {
+  tools.classList.add('hidden');
+  if (!/^[a-f0-9]{12}$/.test(id)) fail('Niepoprawne id');
+  else fetch(`${API}/api/${id}`)
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+    .then(t => render(t, 0))
+    .catch(e => fail('Nie wczytano: ' + e.message));
+} else if (packed) {
+  tools.classList.add('hidden');
+  unpack(packed).then(t => render(t, 0)).catch(e => fail('Niepoprawny link: ' + e.message));
+} else if (window.self !== window.top) {
+  tools.classList.add('hidden');
+  fail('Brak blueprintu w linku (użyj ?bp=nazwa)');
+} else {
+  const src = document.getElementById('src');
+  const nameEl = document.getElementById('name');
+  const out = document.getElementById('out');
+  const btn = document.getElementById('commit');
+  const slug = () => nameEl.value.trim().toLowerCase().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '');
+  const base = location.origin + location.pathname;
+  const owner = location.hostname.split('.')[0];
+  const repo = location.pathname.split('/')[1] || '';
+  const gh = path => `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+  src.addEventListener('input', () => render(src.value, tools.offsetHeight));
+  nameEl.addEventListener('input', () => {
+    out.textContent = slug() ? `Plik: bp/${slug()}.txt  →  ${base}?bp=${slug()}` : '';
+  });
+  document.getElementById('forget').onclick = () => {
+    localStorage.removeItem('gh_token');
+    out.textContent = 'Token usunięty z tej przeglądarki.';
+  };
+
+  btn.onclick = async () => {
+    const s = slug();
+    if (!src.value.trim()) { out.textContent = 'Najpierw wklej blueprint.'; return; }
+    if (!s) { out.textContent = 'Wpisz nazwę.'; return; }
+    let token = localStorage.getItem('gh_token');
+    if (!token) {
+      token = (prompt('Wklej token GitHub (fine-grained, tylko to repo, Contents: Read and write). Zapamiętam go w tej przeglądarce:') || '').trim();
+      if (!token) return;
+      localStorage.setItem('gh_token', token);
+    }
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28'
+    };
+    const link = `${base}?bp=${s}`;
+    btn.disabled = true;
+    try {
+      out.textContent = 'Sprawdzam repozytorium…';
+      const path = `bp/${s}.txt`;
+      const ex = await fetch(gh(path), { headers });
+      let sha;
+      if (ex.status === 200) {
+        if (!confirm(`Plik ${path} już istnieje. Nadpisać?`)) { out.textContent = 'Anulowano.'; return; }
+        sha = (await ex.json()).sha;
+      } else if (ex.status === 401 || ex.status === 403) {
+        throw Object.assign(new Error('token odrzucony'), { auth: true });
+      } else if (ex.status !== 404) {
+        throw new Error('GitHub: ' + ex.status);
+      }
+      out.textContent = 'Zapisuję commit…';
+      const put = await fetch(gh(path), {
+        method: 'PUT',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `${sha ? 'Update' : 'Add'} blueprint ${s}`, content: toB64(src.value), ...(sha && { sha }) })
+      });
+      if (put.status === 401 || put.status === 403 || put.status === 404)
+        throw Object.assign(new Error('brak uprawnień do zapisu (token lub repo)'), { auth: true });
+      if (!put.ok) throw new Error('GitHub: ' + put.status);
+
+      await navigator.clipboard.writeText(link).catch(() => {});
+      out.textContent = `Zapisano, link skopiowany: ${link}  — czekam na publikację strony…`;
+      for (let i = 0; i < 48; i++) {
+        await sleep(5000);
+        const r = await fetch(`bp/${s}.txt?cb=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+        if (r && r.ok && (await r.text()).trim() === src.value.trim()) {
+          out.textContent = `Opublikowano ✓ możesz wkleić w Notion: ${link}`;
+          return;
+        }
+      }
+      out.textContent = `Zapisano w repo, ale publikacja trwa dłużej niż zwykle. Link: ${link} (sprawdź zakładkę Actions).`;
+    } catch (e) {
+      if (e.auth) localStorage.removeItem('gh_token');
+      out.textContent = 'Błąd: ' + e.message + (e.auth ? ' — token usunięty, spróbuj ponownie.' : '');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+</script>
+</body>
+</html>
