@@ -14,13 +14,21 @@
   #name{width:180px}
   #out{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
   .hidden{display:none !important}
+  #etoggle{position:fixed;left:8px;bottom:8px;z-index:9999;width:32px;height:32px;border-radius:6px;border:1px solid #444;background:#2a2c31;color:#ddd;cursor:pointer;opacity:.55}
+  #etoggle:hover{opacity:1}
+  #epanel{position:fixed;left:0;right:0;top:0;z-index:9998;background:#1a1c1ff2;border-bottom:1px solid #444;padding:8px;display:none;flex-direction:column;gap:6px;box-sizing:border-box}
+  #epanel textarea{height:80px;resize:vertical}
+  #epanel .r{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  #est{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
 </style>
 </head>
 <body>
 <div id="tools">
   <textarea id="src" placeholder="Wklej blueprint z UE (Ctrl+V)"></textarea>
   <div id="row">
+    <select id="existing"><option value="">— nowy blueprint —</option></select>
     <input id="name" placeholder="nazwa (np. drzwi)">
+    <button id="clear">Wyczyść pole</button>
     <button id="commit"><b>Zapisz na GitHubie i kopiuj link</b></button>
     <button id="forget" title="Usuwa zapamiętany token GitHub z tej przeglądarki">Wyloguj token</button>
   </div>
@@ -33,6 +41,26 @@ const view = document.getElementById('view');
 const tools = document.getElementById('tools');
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 
+const owner = location.hostname.split('.')[0];
+const repo = location.pathname.split('/')[1] || '';
+const gh = path => `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+const ghHeaders = token => ({
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  ...(token && { Authorization: `Bearer ${token}` })
+});
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} }
+};
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function toB64(str) {
+  const u = new TextEncoder().encode(str);
+  let s = '';
+  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 const b64u = {
   dec(s) { return Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)); }
 };
@@ -44,13 +72,90 @@ function render(text, reserved) {
   new window.blueprintUE.render.Main(text, view, { height: (innerHeight - reserved) + 'px' }).start();
 }
 function fail(msg) { view.textContent = msg; }
-function toB64(str) {
-  const u = new TextEncoder().encode(str);
-  let s = '';
-  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
-  return btoa(s);
+
+async function saveToRepo(path, text, token, confirmOverwrite) {
+  const headers = ghHeaders(token);
+  const ex = await fetch(gh(path), { headers });
+  let sha;
+  if (ex.status === 200) {
+    if (confirmOverwrite && !(await confirmOverwrite())) return 'cancelled';
+    sha = (await ex.json()).sha;
+  } else if (ex.status === 401 || ex.status === 403) {
+    throw Object.assign(new Error('token odrzucony'), { auth: true });
+  } else if (ex.status !== 404) {
+    throw new Error('GitHub: ' + ex.status);
+  }
+  const label = path.replace(/^bp\//, '').replace(/\.txt$/, '');
+  const put = await fetch(gh(path), {
+    method: 'PUT',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `${sha ? 'Update' : 'Add'} blueprint ${label}`, content: toB64(text), ...(sha && { sha }) })
+  });
+  if (put.status === 401 || put.status === 403 || put.status === 404)
+    throw Object.assign(new Error('brak uprawnień do zapisu (token lub repo)'), { auth: true });
+  if (!put.ok) throw new Error('GitHub: ' + put.status);
+  return sha ? 'updated' : 'created';
 }
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function waitLive(slug, text, tries = 48) {
+  for (let i = 0; i < tries; i++) {
+    await sleep(5000);
+    const r = await fetch(`bp/${slug}.txt?cb=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    if (r && r.ok && (await r.text()).trim() === text.trim()) return true;
+  }
+  return false;
+}
+
+/* Panel edycji widoczny w embedzie (?bp=nazwa): przycisk ✎ pokazuje/ukrywa */
+function initEditPanel(slug) {
+  const toggle = document.createElement('button');
+  toggle.id = 'etoggle';
+  toggle.textContent = '✎';
+  toggle.title = 'Pokaż/ukryj edytor (nadpisz ten blueprint)';
+  const panel = document.createElement('div');
+  panel.id = 'epanel';
+  panel.innerHTML = `
+    <textarea id="eta" placeholder="Wklej nowy blueprint, aby zastąpić bp/${slug}.txt"></textarea>
+    <div class="r">
+      <input id="etk" type="password" autocomplete="off" placeholder="token GitHub (jednorazowo)">
+      <button id="esv"><b>Zapisz (nadpisz bp/${slug}.txt)</b></button>
+      <button id="ecl">Wyczyść pole</button>
+      <button id="ehd">Ukryj</button>
+    </div>
+    <div id="est"></div>`;
+  document.body.append(panel, toggle);
+  const $ = id => panel.querySelector('#' + id);
+  const ta = $('eta'), tk = $('etk'), st = $('est'), sv = $('esv');
+  const syncToken = () => { tk.style.display = store.get('gh_token') ? 'none' : ''; };
+  const show = on => { panel.style.display = on ? 'flex' : 'none'; if (on) { syncToken(); ta.focus(); } };
+  toggle.onclick = () => show(panel.style.display !== 'flex');
+  $('ehd').onclick = () => show(false);
+  $('ecl').onclick = () => { ta.value = ''; ta.focus(); };
+
+  sv.onclick = async () => {
+    const text = ta.value;
+    if (!text.trim()) { st.textContent = 'Najpierw wklej nowy blueprint.'; return; }
+    const token = store.get('gh_token') || tk.value.trim();
+    if (!token) { st.textContent = 'Podaj token GitHub.'; tk.style.display = ''; tk.focus(); return; }
+    sv.disabled = true;
+    try {
+      st.textContent = 'Zapisuję commit…';
+      await saveToRepo(`bp/${slug}.txt`, text, token);
+      store.set('gh_token', token);
+      tk.value = '';
+      render(text, 0);
+      ta.value = '';
+      st.textContent = 'Zapisano ✓ widok zaktualizowany. Czekam na publikację strony…';
+      st.textContent = (await waitLive(slug, text))
+        ? 'Opublikowano ✓ odśwież embed w Notion, jeśli nadal widzisz starą wersję.'
+        : 'Zapisano w repo, publikacja trwa dłużej niż zwykle (zakładka Actions).';
+    } catch (e) {
+      if (e.auth) { store.del('gh_token'); syncToken(); tk.style.display = ''; }
+      st.textContent = 'Błąd: ' + e.message + (e.auth ? ' — podaj token ponownie.' : '');
+    } finally {
+      sv.disabled = false;
+    }
+  };
+}
 
 const params = new URLSearchParams(location.search);
 const name = params.get('bp');
@@ -62,8 +167,8 @@ if (name) {
   if (!/^[\w-]+$/.test(name)) fail('Niepoprawna nazwa');
   else fetch(`bp/${name}.txt`)
     .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(t => render(t, 0))
-    .catch(e => fail('Nie wczytano: ' + e.message));
+    .then(t => { render(t, 0); initEditPanel(name); })
+    .catch(e => { fail('Nie wczytano: ' + e.message); initEditPanel(name); });
 } else if (id) {
   tools.classList.add('hidden');
   if (!/^[a-f0-9]{12}$/.test(id)) fail('Niepoprawne id');
@@ -82,18 +187,38 @@ if (name) {
   const nameEl = document.getElementById('name');
   const out = document.getElementById('out');
   const btn = document.getElementById('commit');
+  const sel = document.getElementById('existing');
   const slug = () => nameEl.value.trim().toLowerCase().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '');
   const base = location.origin + location.pathname;
-  const owner = location.hostname.split('.')[0];
-  const repo = location.pathname.split('/')[1] || '';
-  const gh = path => `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+  async function loadList(selected) {
+    try {
+      const r = await fetch(gh('bp'), { headers: ghHeaders(store.get('gh_token')) });
+      if (!r.ok) throw new Error(r.status);
+      const names = (await r.json()).filter(f => f.type === 'file' && f.name.endsWith('.txt')).map(f => f.name.replace(/\.txt$/, ''));
+      sel.replaceChildren(new Option('— nowy blueprint —', ''), ...names.map(n => new Option(n, n)));
+      sel.value = names.includes(selected) ? selected : '';
+    } catch (e) { /* lista jest opcjonalna */ }
+  }
+  sel.onchange = async () => {
+    if (!sel.value) { src.value = ''; nameEl.value = ''; out.textContent = ''; view.replaceChildren(); return; }
+    out.textContent = 'Wczytuję…';
+    const r = await fetch(gh(`bp/${sel.value}.txt`), { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' } });
+    if (!r.ok) { out.textContent = 'Błąd: ' + r.status; return; }
+    src.value = await r.text();
+    nameEl.value = sel.value;
+    render(src.value, tools.offsetHeight);
+    out.textContent = `Wczytano bp/${sel.value}.txt. Kliknij „Wyczyść pole", wklej nowy kod i zapisz, żeby go zastąpić.`;
+  };
+  document.getElementById('clear').onclick = () => { src.value = ''; view.replaceChildren(); src.focus(); };
+  loadList();
 
   src.addEventListener('input', () => render(src.value, tools.offsetHeight));
   nameEl.addEventListener('input', () => {
     out.textContent = slug() ? `Plik: bp/${slug()}.txt  →  ${base}?bp=${slug()}` : '';
   });
   document.getElementById('forget').onclick = () => {
-    localStorage.removeItem('gh_token');
+    store.del('gh_token');
     out.textContent = 'Token usunięty z tej przeglądarki.';
   };
 
@@ -101,55 +226,26 @@ if (name) {
     const s = slug();
     if (!src.value.trim()) { out.textContent = 'Najpierw wklej blueprint.'; return; }
     if (!s) { out.textContent = 'Wpisz nazwę.'; return; }
-    let token = localStorage.getItem('gh_token');
+    let token = store.get('gh_token');
     if (!token) {
       token = (prompt('Wklej token GitHub (fine-grained, tylko to repo, Contents: Read and write). Zapamiętam go w tej przeglądarce:') || '').trim();
       if (!token) return;
-      localStorage.setItem('gh_token', token);
+      store.set('gh_token', token);
     }
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    };
     const link = `${base}?bp=${s}`;
     btn.disabled = true;
     try {
-      out.textContent = 'Sprawdzam repozytorium…';
-      const path = `bp/${s}.txt`;
-      const ex = await fetch(gh(path), { headers });
-      let sha;
-      if (ex.status === 200) {
-        if (!confirm(`Plik ${path} już istnieje. Nadpisać?`)) { out.textContent = 'Anulowano.'; return; }
-        sha = (await ex.json()).sha;
-      } else if (ex.status === 401 || ex.status === 403) {
-        throw Object.assign(new Error('token odrzucony'), { auth: true });
-      } else if (ex.status !== 404) {
-        throw new Error('GitHub: ' + ex.status);
-      }
       out.textContent = 'Zapisuję commit…';
-      const put = await fetch(gh(path), {
-        method: 'PUT',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: `${sha ? 'Update' : 'Add'} blueprint ${s}`, content: toB64(src.value), ...(sha && { sha }) })
-      });
-      if (put.status === 401 || put.status === 403 || put.status === 404)
-        throw Object.assign(new Error('brak uprawnień do zapisu (token lub repo)'), { auth: true });
-      if (!put.ok) throw new Error('GitHub: ' + put.status);
-
+      const res = await saveToRepo(`bp/${s}.txt`, src.value, token, async () => confirm(`Plik bp/${s}.txt już istnieje. Nadpisać?`));
+      if (res === 'cancelled') { out.textContent = 'Anulowano.'; return; }
+      loadList(s);
       await navigator.clipboard.writeText(link).catch(() => {});
       out.textContent = `Zapisano, link skopiowany: ${link}  — czekam na publikację strony…`;
-      for (let i = 0; i < 48; i++) {
-        await sleep(5000);
-        const r = await fetch(`bp/${s}.txt?cb=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
-        if (r && r.ok && (await r.text()).trim() === src.value.trim()) {
-          out.textContent = `Opublikowano ✓ możesz wkleić w Notion: ${link}`;
-          return;
-        }
-      }
-      out.textContent = `Zapisano w repo, ale publikacja trwa dłużej niż zwykle. Link: ${link} (sprawdź zakładkę Actions).`;
+      out.textContent = (await waitLive(s, src.value))
+        ? `Opublikowano ✓ możesz wkleić w Notion: ${link}`
+        : `Zapisano w repo, ale publikacja trwa dłużej niż zwykle. Link: ${link} (sprawdź zakładkę Actions).`;
     } catch (e) {
-      if (e.auth) localStorage.removeItem('gh_token');
+      if (e.auth) store.del('gh_token');
       out.textContent = 'Błąd: ' + e.message + (e.auth ? ' — token usunięty, spróbuj ponownie.' : '');
     } finally {
       btn.disabled = false;
