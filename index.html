@@ -7,44 +7,62 @@
 <title>Blueprint viewer</title>
 <link rel="stylesheet" href="bue-render/render.css">
 <style>
-  html,body{margin:0;height:100%;background:#1a1c1f;color:#ddd;font:14px system-ui,sans-serif}
-  #tools{display:flex;flex-direction:column;gap:6px;padding:8px;box-sizing:border-box}
-  #src{height:70px;resize:vertical}
-  #row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  #name{width:180px}
-  #out{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
+  :root{--bg:#120d19;--surface:#1b1326;--surface2:#241a33;--border:#3a2a52;--text:#efe9f8;--muted:#a898bf;--accent:#6D00AB;--accent2:#a233e6;--dw:400px}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 85% -10%,#2a0f45 0%,transparent 60%),var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  #view{transition:margin-right .25s ease}
+  @media(min-width:800px){body.open #view{margin-right:var(--dw)}}
+  .card{max-width:440px;margin:14vh auto 0;padding:24px 26px;border-radius:18px;background:var(--surface);border:1px solid var(--border);text-align:center;box-shadow:0 20px 50px #0008}
+  .card h3{margin:0 0 6px;font-size:17px}.card p{margin:0;color:var(--muted)}
+  .card.error{background:#2a0f17;border-color:#ff5a72}.card.error h3{color:#ff8da0}.card.error p{color:#ffc2cc}
+  .fab{position:fixed;left:14px;bottom:14px;z-index:9999;width:42px;height:42px;border-radius:14px;border:1px solid #ffffff22;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:18px;cursor:pointer;box-shadow:0 8px 20px #6d00ab66;opacity:.8;transition:transform .15s,opacity .15s}
+  .fab:hover{opacity:1;transform:translateY(-2px)}
+  .fab2{left:64px;background:var(--surface2);box-shadow:0 8px 20px #0006}
+  #drawer{position:fixed;top:0;right:0;height:100%;width:min(var(--dw),100vw);z-index:10000;display:flex;flex-direction:column;background:linear-gradient(180deg,var(--surface),#150f1e);border-left:1px solid var(--border);box-shadow:-20px 0 50px #0009;transform:translateX(105%);transition:transform .25s ease}
+  body.open #drawer{transform:none}
+  #drawer header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface2)}
+  #drawer .ttl{font-weight:650;font-size:15px;display:flex;align-items:center;gap:8px}
+  #drawer .dot{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 0 10px var(--accent2)}
+  .badge{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:999px;background:#6d00ab33;border:1px solid #8a3ffc66;color:#d9bcff}
+  .x{background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px;border-radius:8px}.x:hover{color:#fff;background:#ffffff12}
+  .dbody{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+  label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  input,select,textarea{width:100%;font:inherit;font-size:13.5px;letter-spacing:0;text-transform:none;color:var(--text);background:#0f0a16;border:1px solid var(--border);border-radius:11px;padding:9px 11px;outline:none;transition:border-color .15s,box-shadow .15s}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent2);box-shadow:0 0 0 3px #a233e633}
+  textarea{min-height:150px;resize:vertical;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .path{font:12px ui-monospace,monospace;color:#c9a8f5;word-break:break-all;min-height:16px}
+  .btns{display:flex;flex-wrap:wrap;gap:8px}
+  .btn{font:inherit;font-weight:600;font-size:13px;padding:9px 14px;border-radius:11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:transform .12s,background .15s,box-shadow .15s}
+  .btn:hover{transform:translateY(-1px);background:#2e2142}
+  .btn:disabled{opacity:.5;cursor:default;transform:none}
+  .btn-primary{border:0;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 8px 20px #6d00ab55}
+  .btn-primary:hover{background:linear-gradient(135deg,#7d0ac2,#b44bf0)}
+  .btn-ghost{background:transparent}
+  .linkbtn{align-self:flex-start;background:none;border:0;padding:0;font:inherit;font-size:12px;color:var(--muted);text-decoration:underline;cursor:pointer}.linkbtn:hover{color:#fff}
+  .msg{position:sticky;top:-16px;z-index:3;display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-radius:12px;border:1px solid;font-size:13px;word-break:break-word;box-shadow:0 8px 24px #0006}
+  .msg .ic{font-weight:800}.msg .tx{flex:1}
+  .msg .mx{background:none;border:0;color:inherit;cursor:pointer;opacity:.7;font-size:14px}
+  .msg.error{background:#2a0f17;border-color:#ff5a72;color:#ffc2cc}
+  .msg.ok{background:#0f2a1b;border-color:#3ddc84;color:#b8f2d0}
+  .msg.info{background:#22143a;border-color:#8a3ffc;color:#e0d0ff}
+  .confirm{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:#0a0610c8;backdrop-filter:blur(3px)}
+  .cbox{background:var(--surface2);border:1px solid var(--accent2);border-radius:16px;padding:18px;box-shadow:0 20px 60px #000a}
+  .cbox p{margin:0 0 14px;word-break:break-word}
   .hidden{display:none !important}
-  #etoggle,#ereload{position:fixed;left:8px;bottom:8px;z-index:9999;width:32px;height:32px;border-radius:6px;border:1px solid #444;background:#2a2c31;color:#ddd;cursor:pointer;opacity:.55}
-  #ereload{left:46px}
-  #etoggle:hover,#ereload:hover{opacity:1}
-  #epanel{position:relative;z-index:9998;background:#1a1c1ff2;border-bottom:1px solid #444;padding:8px;display:none;flex-direction:column;gap:6px;box-sizing:border-box}
-  #epanel textarea{height:80px;resize:vertical}
-  #epanel .r{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  #est{font:12px ui-monospace,monospace;color:#9ab;word-break:break-all;min-height:1.2em}
 </style>
 </head>
 <body>
-<div id="tools">
-  <textarea id="src" placeholder="Wklej blueprint z UE (Ctrl+V)"></textarea>
-  <div id="row">
-    <select id="existing"><option value="">— nowy blueprint —</option></select>
-    <input id="name" placeholder="nazwa (np. drzwi)">
-    <button id="clear">Wyczyść pole</button>
-    <button id="commit"><b>Zapisz na GitHubie i kopiuj link</b></button>
-    <button id="forget" title="Usuwa zapamiętany token GitHub z tej przeglądarki">Wyloguj token</button>
-  </div>
-  <div id="out"></div>
-</div>
 <div id="view"></div>
 <script src="bue-render/render.js"></script>
 <script>
-const view = document.getElementById('view');
-const tools = document.getElementById('tools');
-const VERSION = 'v7 (przycisk odśwież)';
+const VERSION = 'v8';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
+const view = document.getElementById('view');
 
 const owner = location.hostname.split('.')[0];
 const repo = location.pathname.split('/')[1] || '';
+const base = location.origin + location.pathname;
 const gh = path => `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 const ghHeaders = token => ({
   Accept: 'application/vnd.github+json',
@@ -57,226 +75,291 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch {} }
 };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const authErr = m => Object.assign(new Error(m || 'token odrzucony'), { auth: true });
 function toB64(str) {
   const u = new TextEncoder().encode(str);
   let s = '';
   for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
   return btoa(s);
 }
-const b64u = {
-  dec(s) { return Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)); }
-};
 async function unpack(s) {
-  return new Response(new Blob([b64u.dec(s)]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  const bin = Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+  return new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
 }
-function render(text, reserved) {
-  view.replaceChildren();
-  new window.blueprintUE.render.Main(text, view, { height: (innerHeight - reserved) + 'px' }).start();
-}
-function fail(msg) { view.textContent = msg; }
 
-async function getSha(path, headers) {
-  const dir = path.split('/').slice(0, -1).join('/');
-  const r = await fetch(`${gh(dir)}?cb=${Date.now()}`, { headers, cache: 'no-store' });
-  if (r.status === 401 || r.status === 403) throw Object.assign(new Error('token odrzucony'), { auth: true });
-  if (r.status === 404) return null;
+let shown = null;
+function render(text) {
+  view.replaceChildren();
+  shown = text;
+  new window.blueprintUE.render.Main(text, view, { height: innerHeight + 'px' }).start();
+}
+function showCard(kind, title, text) {
+  view.replaceChildren();
+  shown = '';
+  const d = document.createElement('div');
+  d.className = 'card ' + kind;
+  const h = document.createElement('h3'); h.textContent = title;
+  const p = document.createElement('p'); p.textContent = text;
+  d.append(h, p);
+  view.append(d);
+}
+const fail = text => showCard('error', 'Nie udało się wczytać', text);
+
+/* ---------- GitHub ---------- */
+let defaultBranch = null;
+async function fetchTree(headers) {
+  const api = `https://api.github.com/repos/${owner}/${repo}`;
+  const opts = { headers, cache: 'no-store' };
+  if (!defaultBranch) {
+    const r = await fetch(`${api}?cb=${Date.now()}`, opts);
+    if (r.status === 401) throw authErr();
+    if (!r.ok) throw new Error('GitHub: ' + r.status + (r.status === 403 ? ' (limit zapytań, podaj token)' : ''));
+    defaultBranch = (await r.json()).default_branch;
+  }
+  const r = await fetch(`${api}/git/trees/${defaultBranch}?recursive=1&cb=${Date.now()}`, opts);
+  if (r.status === 401) throw authErr();
   if (!r.ok) throw new Error('GitHub: ' + r.status);
-  const list = await r.json();
-  const f = Array.isArray(list) ? list.find(x => x.path === path) : null;
-  return f ? f.sha : null;
+  const data = await r.json();
+  return data.tree
+    .filter(t => t.type === 'blob' && t.path.startsWith('bp/') && t.path.endsWith('.txt'))
+    .map(t => ({ path: t.path, rel: t.path.slice(3, -4), sha: t.sha }));
 }
-async function saveToRepo(path, text, token, confirmOverwrite) {
-  const headers = ghHeaders(token);
-  const sha = await getSha(path, headers);
-  if (sha && confirmOverwrite && !(await confirmOverwrite())) return 'cancelled';
-  const label = path.replace(/^bp\//, '').replace(/\.txt$/, '');
-  const put = await fetch(gh(path), {
+async function putFile(path, text, token, sha, message) {
+  const res = await fetch(gh(path), {
     method: 'PUT',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: `${sha ? 'Update' : 'Add'} blueprint ${label}`, content: toB64(text), ...(sha && { sha }) })
+    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, content: toB64(text), ...(sha && { sha }) })
   });
-  if (put.status === 401 || put.status === 403 || put.status === 404)
-    throw Object.assign(new Error('brak uprawnień do zapisu (token lub repo)'), { auth: true });
-  if (!put.ok) throw new Error('GitHub: ' + put.status);
-  return sha ? 'updated' : 'created';
+  if ([401, 403, 404].includes(res.status)) throw authErr('brak uprawnień do zapisu (token lub repo)');
+  if (res.status === 409 || res.status === 422) throw new Error('konflikt zapisu, odśwież listę i spróbuj ponownie');
+  if (!res.ok) throw new Error('GitHub: ' + res.status);
 }
-async function waitLive(slug, text, tries = 48) {
+async function deleteFile(path, sha, token, message) {
+  const res = await fetch(gh(path), {
+    method: 'DELETE',
+    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, sha })
+  });
+  if ([401, 403, 404].includes(res.status)) throw authErr('brak uprawnień do usunięcia starego pliku');
+  if (!res.ok) throw new Error('GitHub: ' + res.status);
+}
+async function waitLive(rel, text, tries = 48) {
   for (let i = 0; i < tries; i++) {
     await sleep(5000);
-    const r = await fetch(`bp/${slug}.txt?cb=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
+    const r = await fetch(`bp/${rel}.txt?cb=${Date.now()}`, { cache: 'no-store' }).catch(() => null);
     if (r && r.ok && (await r.text()).trim() === text.trim()) return true;
   }
   return false;
 }
 
-/* Panel edycji widoczny w embedzie (?bp=nazwa): przycisk ✎ pokazuje/ukrywa */
-function initEditPanel(slug, initialText) {
-  let saved = initialText || '', preview = null;
-  const toggle = document.createElement('button');
-  toggle.id = 'etoggle';
-  toggle.textContent = '✎';
-  toggle.title = 'Pokaż/ukryj edytor (nadpisz ten blueprint)';
-  const panel = document.createElement('div');
-  panel.id = 'epanel';
-  panel.innerHTML = `
-    <textarea id="eta" placeholder="Wklej nowy blueprint, aby zastąpić bp/${slug}.txt"></textarea>
-    <div class="r">
-      <input id="etk" type="password" autocomplete="off" placeholder="token GitHub (jednorazowo)">
-      <button id="esv"><b>Zapisz (nadpisz bp/${slug}.txt)</b></button>
-      <button id="ecl">Wyczyść pole</button>
-      <button id="ehd">Ukryj</button>
-    </div>
-    <div id="est"></div>`;
-  document.body.insertBefore(panel, view);
-  const reload = document.createElement('button');
-  reload.id = 'ereload';
-  reload.textContent = '↻';
-  reload.title = 'Odśwież embed (pobierz najnowszą wersję strony i blueprintu)';
-  reload.onclick = () => location.reload();
-  document.body.append(toggle, reload);
-  const $ = id => panel.querySelector('#' + id);
-  const ta = $('eta'), tk = $('etk'), st = $('est'), sv = $('esv');
-  const syncToken = () => { tk.style.display = store.get('gh_token') ? 'none' : ''; };
-  const isOpen = () => panel.style.display === 'flex';
-  const redraw = () => {
-    const text = (isOpen() && preview) || saved;
-    if (!text) return;
-    try { render(text, isOpen() ? panel.offsetHeight : 0); }
-    catch (e) { st.textContent = 'Błąd podglądu: ' + e.message; }
+/* ---------- Edytor (szuflada z prawej) ---------- */
+function initDrawer(rel, text, openNow) {
+  let saved = text || '', preview = null, current = text ? { rel } : null, files = [], pubSeq = 0;
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <button id="btn-edit" class="fab" title="Pokaż/ukryj edytor">✎</button>
+    <button id="btn-reload" class="fab fab2" title="Odśwież embed (najnowsza wersja strony i blueprintu)">↻</button>
+    <aside id="drawer" aria-label="Edytor blueprintów">
+      <header>
+        <div class="ttl"><span class="dot"></span>Edytor blueprintów</div>
+        <span class="badge" id="ver"></span>
+        <button class="x" id="btn-close" title="Zamknij">✕</button>
+      </header>
+      <div class="dbody">
+        <div id="msg" class="msg hidden"><span class="ic"></span><span class="tx"></span><button class="mx" title="Ukryj">✕</button></div>
+        <label>Istniejący blueprint<select id="f-existing"><option value="">— nowy blueprint —</option></select></label>
+        <div class="grid2">
+          <label>Podfolder w bp/<select id="f-folder"><option value="">(główny: bp/)</option><option value="__new">+ nowy podfolder…</option></select></label>
+          <label>Nazwa<input id="f-name" placeholder="np. drzwi" autocomplete="off"></label>
+        </div>
+        <label id="newfolder-wrap" class="hidden">Nazwa nowego podfolderu<input id="f-newfolder" placeholder="np. FPS lub FPS/bronie" autocomplete="off"></label>
+        <div class="path" id="f-path"></div>
+        <label>Kod blueprintu<textarea id="f-code" placeholder="Wklej węzły z UE (Ctrl+V)"></textarea></label>
+        <label id="token-wrap">Token GitHub<input id="f-token" type="password" autocomplete="off" placeholder="fine-grained, Contents: Read and write"></label>
+        <div class="btns">
+          <button class="btn btn-primary" id="b-save">Zapisz na GitHubie</button>
+          <button class="btn" id="b-link">Kopiuj link</button>
+          <button class="btn btn-ghost" id="b-clear">Wyczyść pole</button>
+        </div>
+        <button class="linkbtn" id="b-forget">Wyloguj token</button>
+      </div>
+      <div id="confirm" class="confirm hidden"><div class="cbox"><p></p><div class="btns"><button class="btn btn-primary" id="c-ok">OK</button><button class="btn btn-ghost" id="c-no">Anuluj</button></div></div></div>
+    </aside>`);
+  const $ = id => document.getElementById(id);
+  const msgEl = $('msg'), existingSel = $('f-existing'), folderSel = $('f-folder'), nameEl = $('f-name');
+  const newFolderEl = $('f-newfolder'), newFolderWrap = $('newfolder-wrap'), ta = $('f-code');
+  const tokenEl = $('f-token'), tokenWrap = $('token-wrap'), saveBtn = $('b-save'), confirmEl = $('confirm');
+  $('ver').textContent = VERSION;
+
+  const icons = { error: '⚠', ok: '✓', info: 'ℹ' };
+  const msg = (type, textMsg) => {
+    msgEl.className = 'msg ' + type;
+    msgEl.querySelector('.ic').textContent = icons[type];
+    msgEl.querySelector('.tx').textContent = textMsg;
   };
-  const show = on => { panel.style.display = on ? 'flex' : 'none'; if (on) { syncToken(); ta.focus(); } redraw(); };
-  st.textContent = 'wersja strony: ' + VERSION;
-  window.addEventListener('error', e => { if (isOpen()) st.textContent = 'Błąd: ' + e.message; });
+  const hideMsg = () => { msgEl.className = 'msg hidden'; };
+  msgEl.querySelector('.mx').onclick = hideMsg;
+  const askConfirm = (question, okLabel) => new Promise(res => {
+    confirmEl.querySelector('p').textContent = question;
+    $('c-ok').textContent = okLabel || 'OK';
+    confirmEl.classList.remove('hidden');
+    const done = v => { confirmEl.classList.add('hidden'); res(v); };
+    $('c-ok').onclick = () => done(true);
+    $('c-no').onclick = () => done(false);
+  });
+
+  const slugify = s => s.trim().toLowerCase().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '');
+  const slugPath = s => s.split('/').map(slugify).filter(Boolean).join('/');
+  const target = () => {
+    const name = slugify(nameEl.value);
+    const folder = folderSel.value === '__new' ? slugPath(newFolderEl.value) : folderSel.value;
+    return { name, folder, rel: folder ? `${folder}/${name}` : name };
+  };
+  const updatePath = () => { const t = target(); $('f-path').textContent = t.name ? `bp/${t.rel}.txt` : ''; };
+  const syncToken = () => tokenWrap.classList.toggle('hidden', !!store.get('gh_token'));
+  const isOpen = () => document.body.classList.contains('open');
+
+  function redraw() {
+    const t = (isOpen() && preview) || saved;
+    if (t === shown) return;
+    if (!t) { showCard('info', 'Pusty widok', 'Wklej kod blueprintu w edytorze, żeby zobaczyć podgląd.'); return; }
+    try { render(t); } catch (e) { msg('error', 'Błąd podglądu: ' + e.message); }
+  }
+  function setOpen(on) { document.body.classList.toggle('open', on); if (on) syncToken(); redraw(); }
+  function setFields(r) {
+    const i = r.lastIndexOf('/'), folder = i < 0 ? '' : r.slice(0, i);
+    if (![...folderSel.options].some(o => o.value === folder))
+      folderSel.insertBefore(new Option(folder, folder), folderSel.lastElementChild);
+    folderSel.value = folder;
+    newFolderWrap.classList.add('hidden');
+    nameEl.value = r.slice(i + 1);
+    updatePath();
+  }
+
+  async function loadList(selectRel) {
+    try { files = await fetchTree(ghHeaders(store.get('gh_token'))); } catch { return; }
+    const dirOf = f => (f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '');
+    const groups = {};
+    files.forEach(f => (groups[dirOf(f)] ||= []).push(f));
+    existingSel.replaceChildren(new Option('— nowy blueprint —', ''));
+    Object.keys(groups).sort().forEach(d => {
+      const parent = d ? Object.assign(document.createElement('optgroup'), { label: d }) : existingSel;
+      groups[d].forEach(f => parent.append(new Option(f.rel.split('/').pop(), f.rel)));
+      if (d) existingSel.append(parent);
+    });
+    existingSel.value = files.some(f => f.rel === selectRel) ? selectRel : '';
+    const keep = folderSel.value;
+    const folders = [...new Set(files.map(dirOf).filter(Boolean))].sort();
+    folderSel.replaceChildren(new Option('(główny: bp/)', ''), ...folders.map(d => new Option(d, d)), new Option('+ nowy podfolder…', '__new'));
+    folderSel.value = [...folderSel.options].some(o => o.value === keep) ? keep : '';
+  }
+
+  existingSel.onchange = async () => {
+    const sel = existingSel.value;
+    if (!sel) { current = null; saved = ''; preview = null; ta.value = ''; nameEl.value = ''; folderSel.value = ''; updatePath(); hideMsg(); redraw(); return; }
+    msg('info', 'Wczytuję…');
+    try {
+      const r = await fetch(`${gh(`bp/${sel}.txt`)}?cb=${Date.now()}`, { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+      if (!r.ok) throw new Error('GitHub: ' + r.status);
+      saved = await r.text(); preview = null; ta.value = ''; current = { rel: sel };
+      setFields(sel); hideMsg(); redraw();
+    } catch (e) { msg('error', 'Nie wczytano: ' + e.message); }
+  };
+  folderSel.onchange = () => { newFolderWrap.classList.toggle('hidden', folderSel.value !== '__new'); updatePath(); };
+  nameEl.addEventListener('input', updatePath);
+  newFolderEl.addEventListener('input', updatePath);
   ta.addEventListener('input', () => {
     preview = ta.value.trim() ? ta.value : null;
-    st.textContent = preview ? `Podgląd niezapisanego kodu: ${ta.value.length} znaków` : 'wersja strony: ' + VERSION;
+    if (preview) msg('info', `Podgląd niezapisanego kodu: ${ta.value.length} znaków`); else hideMsg();
     redraw();
   });
-  toggle.onclick = () => show(!isOpen());
-  $('ehd').onclick = () => show(false);
-  $('ecl').onclick = () => { ta.value = ''; preview = null; redraw(); ta.focus(); };
+  $('b-clear').onclick = () => { ta.value = ''; preview = null; hideMsg(); redraw(); ta.focus(); };
+  $('b-forget').onclick = () => { store.del('gh_token'); syncToken(); msg('info', 'Token usunięty z tej przeglądarki.'); };
+  $('b-link').onclick = async () => {
+    const t = target();
+    if (!t.name) return msg('error', 'Najpierw wpisz nazwę.');
+    const link = `${base}?bp=${t.rel}`;
+    await navigator.clipboard.writeText(link).catch(() => {});
+    msg('info', `Link: ${link} (plik bp/${t.rel}.txt musi być zapisany w repo)`);
+  };
+  $('btn-edit').onclick = () => setOpen(!isOpen());
+  $('btn-close').onclick = () => setOpen(false);
+  $('btn-reload').onclick = () => location.reload();
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) setOpen(false); });
+  window.addEventListener('error', e => { if (isOpen()) msg('error', 'Błąd: ' + e.message); });
 
-  sv.onclick = async () => {
-    const text = ta.value;
-    if (!text.trim()) { st.textContent = 'Najpierw wklej nowy blueprint.'; return; }
-    const token = store.get('gh_token') || tk.value.trim();
-    if (!token) { st.textContent = 'Podaj token GitHub.'; tk.style.display = ''; tk.focus(); return; }
-    sv.disabled = true;
+  saveBtn.onclick = async () => {
+    const t = target();
+    if (!t.name) return msg('error', 'Wpisz nazwę blueprintu.');
+    const code = ta.value.trim() ? ta.value : '';
+    const isRename = !!current && current.rel !== t.rel;
+    const body = code || (current ? saved : '');
+    if (!body.trim()) return msg('error', 'Wklej kod blueprintu.');
+    if (current && !isRename && !code) return msg('info', 'Brak zmian: wklej nowy kod albo zmień nazwę / podfolder.');
+    const token = store.get('gh_token') || tokenEl.value.trim();
+    if (!token) { tokenWrap.classList.remove('hidden'); tokenEl.focus(); return msg('error', 'Podaj token GitHub.'); }
+    saveBtn.disabled = true;
     try {
-      st.textContent = 'Zapisuję commit…';
-      await saveToRepo(`bp/${slug}.txt`, text, token);
-      store.set('gh_token', token);
-      tk.value = '';
-      saved = text; preview = null;
-      ta.value = '';
-      redraw();
-      st.textContent = 'Zapisano ✓ widok zaktualizowany. Czekam na publikację strony…';
-      st.textContent = (await waitLive(slug, text))
-        ? 'Opublikowano ✓ odśwież embed w Notion, jeśli nadal widzisz starą wersję.'
-        : 'Zapisano w repo, publikacja trwa dłużej niż zwykle (zakładka Actions).';
+      msg('info', 'Sprawdzam repozytorium…');
+      files = await fetchTree(ghHeaders(token));
+      const old = isRename ? files.find(f => f.rel === current.rel) : null;
+      const dest = files.find(f => f.rel === t.rel);
+      if (isRename && !(await askConfirm(`Zmienić ${current.rel} → ${t.rel}? Stary link ?bp=${current.rel} przestanie działać.`, 'Zmień'))) return msg('info', 'Anulowano.');
+      if (dest && (isRename || !current) && !(await askConfirm(`Plik bp/${t.rel}.txt już istnieje. Nadpisać?`, 'Nadpisz'))) return msg('info', 'Anulowano.');
+      msg('info', 'Zapisuję commit…');
+      await putFile(`bp/${t.rel}.txt`, body, token, dest && dest.sha, `${dest ? 'Update' : 'Add'} blueprint ${t.rel}`);
+      if (old) await deleteFile(`bp/${old.rel}.txt`, old.sha, token, `Rename blueprint ${old.rel} -> ${t.rel}`);
+      store.set('gh_token', token); tokenEl.value = ''; syncToken();
+      current = { rel: t.rel }; saved = body; preview = null; ta.value = ''; redraw();
+      loadList(t.rel);
+      const link = `${base}?bp=${t.rel}`;
+      await navigator.clipboard.writeText(link).catch(() => {});
+      msg('ok', `Zapisano${isRename ? ' (zmieniono nazwę/folder, zaktualizuj adres embeda w Notion)' : ''}. Link: ${link} — czekam na publikację strony…`);
+      const my = ++pubSeq;
+      waitLive(t.rel, body).then(ok => {
+        if (my !== pubSeq || !msgEl.classList.contains('ok')) return;
+        msg(ok ? 'ok' : 'info', ok ? `Opublikowano ✓ Link: ${link}` : `Zapisano w repo, publikacja trwa dłużej niż zwykle (zakładka Actions). Link: ${link}`);
+      });
     } catch (e) {
-      if (e.auth) { store.del('gh_token'); syncToken(); tk.style.display = ''; }
-      st.textContent = 'Błąd: ' + e.message + (e.auth ? ' — podaj token ponownie.' : '');
+      if (e.auth) { store.del('gh_token'); syncToken(); tokenWrap.classList.remove('hidden'); }
+      msg('error', e.message + (e.auth ? ' — podaj token ponownie.' : ''));
     } finally {
-      sv.disabled = false;
+      saveBtn.disabled = false;
     }
   };
+
+  syncToken();
+  if (rel) setFields(rel);
+  updatePath();
+  loadList(rel);
+  if (openNow) document.body.classList.add('open');
+  if (!text) { showCard('info', 'Pusty widok', 'Wklej kod blueprintu w edytorze, żeby zobaczyć podgląd.'); }
 }
 
+/* ---------- Tryby ---------- */
 const params = new URLSearchParams(location.search);
 const name = params.get('bp');
 const id = params.get('id');
 const packed = params.get('d') || new URLSearchParams(location.hash.slice(1)).get('d');
 
 if (name) {
-  tools.classList.add('hidden');
-  if (!/^[\w-]+$/.test(name)) fail('Niepoprawna nazwa');
+  if (!/^[\w-]+(\/[\w-]+)*$/.test(name)) fail('Niepoprawna nazwa');
   else fetch(`bp/${name}.txt?cb=${Date.now()}`, { cache: 'no-store' })
     .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(t => { render(t, 0); initEditPanel(name, t); })
-    .catch(e => { fail('Nie wczytano: ' + e.message); initEditPanel(name); });
+    .then(t => { render(t); initDrawer(name, t, false); })
+    .catch(e => { fail('Nie wczytano: ' + e.message); initDrawer(name, '', false); });
 } else if (id) {
-  tools.classList.add('hidden');
   if (!/^[a-f0-9]{12}$/.test(id)) fail('Niepoprawne id');
   else fetch(`${API}/api/${id}`)
     .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-    .then(t => render(t, 0))
+    .then(render)
     .catch(e => fail('Nie wczytano: ' + e.message));
 } else if (packed) {
-  tools.classList.add('hidden');
-  unpack(packed).then(t => render(t, 0)).catch(e => fail('Niepoprawny link: ' + e.message));
+  unpack(packed).then(render).catch(e => fail('Niepoprawny link: ' + e.message));
 } else if (window.self !== window.top) {
-  tools.classList.add('hidden');
-  fail('Brak blueprintu w linku (użyj ?bp=nazwa)');
+  fail('Brak blueprintu w linku (użyj ?bp=nazwa lub ?bp=folder/nazwa)');
 } else {
-  const src = document.getElementById('src');
-  const nameEl = document.getElementById('name');
-  const out = document.getElementById('out');
-  const btn = document.getElementById('commit');
-  const sel = document.getElementById('existing');
-  const slug = () => nameEl.value.trim().toLowerCase().replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '');
-  const base = location.origin + location.pathname;
-
-  async function loadList(selected) {
-    try {
-      const r = await fetch(`${gh('bp')}?cb=${Date.now()}`, { headers: ghHeaders(store.get('gh_token')), cache: 'no-store' });
-      if (!r.ok) throw new Error(r.status);
-      const names = (await r.json()).filter(f => f.type === 'file' && f.name.endsWith('.txt')).map(f => f.name.replace(/\.txt$/, ''));
-      sel.replaceChildren(new Option('— nowy blueprint —', ''), ...names.map(n => new Option(n, n)));
-      sel.value = names.includes(selected) ? selected : '';
-    } catch (e) { /* lista jest opcjonalna */ }
-  }
-  sel.onchange = async () => {
-    if (!sel.value) { src.value = ''; nameEl.value = ''; out.textContent = ''; view.replaceChildren(); return; }
-    out.textContent = 'Wczytuję…';
-    const r = await fetch(`${gh(`bp/${sel.value}.txt`)}?cb=${Date.now()}`, { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
-    if (!r.ok) { out.textContent = 'Błąd: ' + r.status; return; }
-    src.value = await r.text();
-    nameEl.value = sel.value;
-    render(src.value, tools.offsetHeight);
-    out.textContent = `Wczytano bp/${sel.value}.txt. Kliknij „Wyczyść pole", wklej nowy kod i zapisz, żeby go zastąpić.`;
-  };
-  document.getElementById('clear').onclick = () => { src.value = ''; view.replaceChildren(); src.focus(); };
-  loadList();
-
-  src.addEventListener('input', () => render(src.value, tools.offsetHeight));
-  nameEl.addEventListener('input', () => {
-    out.textContent = slug() ? `Plik: bp/${slug()}.txt  →  ${base}?bp=${slug()}` : '';
-  });
-  document.getElementById('forget').onclick = () => {
-    store.del('gh_token');
-    out.textContent = 'Token usunięty z tej przeglądarki.';
-  };
-
-  btn.onclick = async () => {
-    const s = slug();
-    if (!src.value.trim()) { out.textContent = 'Najpierw wklej blueprint.'; return; }
-    if (!s) { out.textContent = 'Wpisz nazwę.'; return; }
-    let token = store.get('gh_token');
-    if (!token) {
-      token = (prompt('Wklej token GitHub (fine-grained, tylko to repo, Contents: Read and write). Zapamiętam go w tej przeglądarce:') || '').trim();
-      if (!token) return;
-      store.set('gh_token', token);
-    }
-    const link = `${base}?bp=${s}`;
-    btn.disabled = true;
-    try {
-      out.textContent = 'Zapisuję commit…';
-      const res = await saveToRepo(`bp/${s}.txt`, src.value, token, async () => confirm(`Plik bp/${s}.txt już istnieje. Nadpisać?`));
-      if (res === 'cancelled') { out.textContent = 'Anulowano.'; return; }
-      loadList(s);
-      await navigator.clipboard.writeText(link).catch(() => {});
-      out.textContent = `Zapisano, link skopiowany: ${link}  — czekam na publikację strony…`;
-      out.textContent = (await waitLive(s, src.value))
-        ? `Opublikowano ✓ możesz wkleić w Notion: ${link}`
-        : `Zapisano w repo, ale publikacja trwa dłużej niż zwykle. Link: ${link} (sprawdź zakładkę Actions).`;
-    } catch (e) {
-      if (e.auth) store.del('gh_token');
-      out.textContent = 'Błąd: ' + e.message + (e.auth ? ' — token usunięty, spróbuj ponownie.' : '');
-    } finally {
-      btn.disabled = false;
-    }
-  };
+  initDrawer(null, '', true);
 }
 </script>
 </body>
