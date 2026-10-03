@@ -26,13 +26,28 @@
   .badge{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:999px;background:#6d00ab33;border:1px solid #8a3ffc66;color:#d9bcff}
   .x{background:none;border:0;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px;border-radius:8px}.x:hover{color:#fff;background:#ffffff12}
   .dbody{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
-  label{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  label,.field{display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   input,select,textarea{width:100%;font:inherit;font-size:13.5px;letter-spacing:0;text-transform:none;color:var(--text);background:#0f0a16;border:1px solid var(--border);border-radius:11px;padding:9px 11px;outline:none;transition:border-color .15s,box-shadow .15s}
   input:focus,select:focus,textarea:focus{border-color:var(--accent2);box-shadow:0 0 0 3px #a233e633}
   select{appearance:none;-webkit-appearance:none;padding:9px 34px 9px 11px;cursor:pointer;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23a898bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 12px center}
   select option,select optgroup{background:#1b1326;color:#efe9f8;font:13.5px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:0;text-transform:none}
   select optgroup{color:#c9a8f5;font-weight:600;font-style:normal}
   select option:checked{background:#6D00AB;color:#fff}
+  .dd{position:relative;letter-spacing:0;text-transform:none}
+  .dd-btn{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;font-size:13.5px;color:var(--text);background:#0f0a16;border:1px solid var(--border);border-radius:11px;padding:9px 11px;cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s}
+  .dd-btn:focus-visible,.dd.open .dd-btn{border-color:var(--accent2);box-shadow:0 0 0 3px #a233e633;outline:none}
+  .dd-btn .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chev{flex:none;width:12px;height:8px;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23a898bf' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat center}
+  .dd-menu{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;max-height:300px;overflow:auto;background:var(--surface2);border:1px solid var(--accent);border-radius:12px;padding:6px;box-shadow:0 18px 40px #000a}
+  .dd-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13.5px;color:var(--text)}
+  .dd-row:hover{background:#6d00ab40}
+  .dd-row.sel{background:#6d00ab80;color:#fff}
+  .dd-row.dd-folder{cursor:default;color:#c9a8f5;font-weight:600;font-size:12.5px}
+  .dd-row.dd-folder:hover{background:#ffffff08}
+  .dd-row svg{flex:none}
+  .dd-row .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dd-del{flex:none;display:flex;background:none;border:0;color:var(--muted);padding:5px;border-radius:8px;cursor:pointer;opacity:.75;transition:color .12s,background .12s}
+  .dd-del:hover{color:#ff8da0;background:#ff5a7226;opacity:1}
   textarea{min-height:150px;resize:vertical;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .path{font:12px ui-monospace,monospace;color:#c9a8f5;word-break:break-all;min-height:16px}
@@ -62,7 +77,7 @@
 <div id="view"></div>
 <script src="bue-render/render.js"></script>
 <script>
-const VERSION = 'v9';
+const VERSION = 'v10';
 const API = 'https://small-wood-f210.wiktor-olejniczak-kontakt.workers.dev'; // tylko dla starych linków ?id=
 const view = document.getElementById('view');
 
@@ -149,6 +164,26 @@ async function deleteFile(path, sha, token, message) {
   if ([401, 403, 404].includes(res.status)) throw authErr('brak uprawnień do usunięcia starego pliku');
   if (!res.ok) throw new Error('GitHub: ' + res.status);
 }
+async function deletePaths(paths, token, message) {
+  const h = { ...ghHeaders(token), 'Content-Type': 'application/json' };
+  const git = `https://api.github.com/repos/${owner}/${repo}/git`;
+  const J = async (res, what) => {
+    if ([401, 403, 404].includes(res.status)) throw authErr('brak uprawnień do usuwania (token lub repo)');
+    if (!res.ok) throw new Error(`${what}: GitHub ${res.status}`);
+    return res.json();
+  };
+  const ref = await J(await fetch(`${git}/ref/heads/${defaultBranch}`, { headers: h, cache: 'no-store' }), 'ref');
+  const parent = ref.object.sha;
+  const commit = await J(await fetch(`${git}/commits/${parent}`, { headers: h, cache: 'no-store' }), 'commit');
+  const tree = await J(await fetch(`${git}/trees`, {
+    method: 'POST', headers: h,
+    body: JSON.stringify({ base_tree: commit.tree.sha, tree: paths.map(path => ({ path, mode: '100644', type: 'blob', sha: null })) })
+  }), 'tree');
+  const made = await J(await fetch(`${git}/commits`, {
+    method: 'POST', headers: h, body: JSON.stringify({ message, tree: tree.sha, parents: [parent] })
+  }), 'commit');
+  await J(await fetch(`${git}/refs/heads/${defaultBranch}`, { method: 'PATCH', headers: h, body: JSON.stringify({ sha: made.sha }) }), 'ref update');
+}
 async function waitLive(rel, text, tries = 48) {
   for (let i = 0; i < tries; i++) {
     await sleep(5000);
@@ -160,7 +195,7 @@ async function waitLive(rel, text, tries = 48) {
 
 /* ---------- Edytor (szuflada z prawej) ---------- */
 function initDrawer(rel, text, openNow) {
-  let saved = text || '', preview = null, current = text ? { rel } : null, files = [], pubSeq = 0, listLoaded = false;
+  let saved = text || '', preview = null, current = text ? { rel } : null, files = [], pubSeq = 0, listLoaded = false, listFailed = false;
 
   document.body.insertAdjacentHTML('beforeend', `
     <button id="btn-edit" class="fab" title="Pokaż/ukryj edytor">✎</button>
@@ -174,7 +209,12 @@ function initDrawer(rel, text, openNow) {
       <div class="dbody">
         <div id="msg" class="msg hidden"><span class="ic"></span><span class="tx"></span><button class="mx" title="Ukryj">✕</button></div>
         <div id="hint" class="msg warn hidden"><span class="ic">!</span><span class="tx"></span><button class="mx" title="Ukryj">✕</button></div>
-        <label>Istniejący blueprint<select id="f-existing"><option value="">— nowy blueprint —</option></select></label>
+        <div class="field"><span>Istniejący blueprint</span>
+          <div class="dd" id="dd">
+            <button type="button" class="dd-btn" id="dd-btn"><span class="lbl" id="dd-lbl">— nowy blueprint —</span><span class="chev"></span></button>
+            <div class="dd-menu hidden" id="dd-menu"></div>
+          </div>
+        </div>
         <div class="grid2">
           <label>Podfolder w bp/<select id="f-folder"><option value="">(główny: bp/)</option><option value="__new">+ nowy podfolder…</option></select></label>
           <label>Nazwa<input id="f-name" placeholder="np. drzwi" autocomplete="off"></label>
@@ -193,7 +233,7 @@ function initDrawer(rel, text, openNow) {
       <div id="confirm" class="confirm hidden"><div class="cbox"><p></p><div class="btns"><button class="btn btn-primary" id="c-ok">OK</button><button class="btn btn-ghost" id="c-no">Anuluj</button></div></div></div>
     </aside>`);
   const $ = id => document.getElementById(id);
-  const msgEl = $('msg'), existingSel = $('f-existing'), folderSel = $('f-folder'), nameEl = $('f-name');
+  const msgEl = $('msg'), folderSel = $('f-folder'), nameEl = $('f-name');
   const newFolderEl = $('f-newfolder'), newFolderWrap = $('newfolder-wrap'), ta = $('f-code');
   const tokenEl = $('f-token'), tokenWrap = $('token-wrap'), saveBtn = $('b-save'), confirmEl = $('confirm');
   $('ver').textContent = VERSION;
@@ -247,35 +287,103 @@ function initDrawer(rel, text, openNow) {
     updatePath();
   }
 
-  async function loadList(selectRel) {
-    try { files = await fetchTree(ghHeaders(store.get('gh_token'))); listLoaded = true; } catch { return; }
-    const dirOf = f => (f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '');
-    const groups = {};
-    files.forEach(f => (groups[dirOf(f)] ||= []).push(f));
-    existingSel.replaceChildren(new Option('— nowy blueprint —', ''));
-    Object.keys(groups).sort().forEach(d => {
-      const parent = d ? Object.assign(document.createElement('optgroup'), { label: d }) : existingSel;
-      groups[d].forEach(f => parent.append(new Option(f.rel.split('/').pop(), f.rel)));
-      if (d) existingSel.append(parent);
+  const TRASH = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>';
+  const FOLDER = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+  const dirOf = f => (f.rel.includes('/') ? f.rel.slice(0, f.rel.lastIndexOf('/')) : '');
+  let selectedRel = rel || '';
+  const dd = $('dd'), ddBtn = $('dd-btn'), ddLbl = $('dd-lbl'), ddMenu = $('dd-menu');
+  const ddClose = () => { ddMenu.classList.add('hidden'); dd.classList.remove('open'); };
+  ddBtn.onclick = () => { const open = ddMenu.classList.contains('hidden'); ddMenu.classList.toggle('hidden', !open); dd.classList.toggle('open', open); };
+  document.addEventListener('click', e => { if (!dd.contains(e.target)) ddClose(); });
+  const onErr = e => {
+    if (e.auth) { store.del('gh_token'); syncToken(); tokenWrap.classList.remove('hidden'); }
+    msg('error', e.message + (e.auth ? ' — podaj token ponownie.' : ''));
+  };
+
+  function row(label, { depth = 0, folder = false, selected = false, onPick, onDelete, delTitle } = {}) {
+    const r = document.createElement('div');
+    r.className = 'dd-row' + (folder ? ' dd-folder' : '') + (selected ? ' sel' : '');
+    r.style.paddingLeft = (8 + depth * 16) + 'px';
+    if (folder) r.insertAdjacentHTML('beforeend', FOLDER);
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = label; r.append(nm);
+    if (onDelete) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'dd-del'; b.title = delTitle; b.innerHTML = TRASH;
+      b.onclick = e => { e.stopPropagation(); onDelete(); };
+      r.append(b);
+    }
+    if (onPick) r.onclick = onPick;
+    return r;
+  }
+  function renderMenu() {
+    ddLbl.textContent = selectedRel || '— nowy blueprint —';
+    ddMenu.replaceChildren(row('— nowy blueprint —', { selected: !selectedRel, onPick: () => pick('') }));
+    if (!listLoaded) { ddMenu.append(row(listFailed ? 'Nie udało się wczytać listy' : 'Wczytuję listę…')); return; }
+    const sorted = files.slice().sort((a, b) => ((dirOf(a) ? 1 : 0) - (dirOf(b) ? 1 : 0)) || a.rel.localeCompare(b.rel));
+    const seen = new Set();
+    sorted.forEach(f => {
+      const parts = f.rel.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const dir = parts.slice(0, i).join('/');
+        if (seen.has(dir)) continue;
+        seen.add(dir);
+        ddMenu.append(row(parts[i - 1], { depth: i - 1, folder: true, delTitle: `Usuń folder ${dir}`, onDelete: () => removeBlueprints(dir, true) }));
+      }
+      ddMenu.append(row(parts[parts.length - 1], {
+        depth: parts.length - 1, selected: f.rel === selectedRel, delTitle: `Usuń ${f.rel}`,
+        onPick: () => pick(f.rel), onDelete: () => removeBlueprints(f.rel, false)
+      }));
     });
-    existingSel.value = files.some(f => f.rel === selectRel) ? selectRel : '';
+    if (!sorted.length) ddMenu.append(row('Brak zapisanych blueprintów'));
+  }
+
+  async function loadList(selectRel) {
+    try { files = await fetchTree(ghHeaders(store.get('gh_token'))); listLoaded = true; listFailed = false; }
+    catch { listFailed = true; renderMenu(); return; }
+    selectedRel = files.some(f => f.rel === selectRel) ? selectRel : '';
+    renderMenu();
     const keep = folderSel.value;
     const folders = [...new Set(files.map(dirOf).filter(Boolean))].sort();
     folderSel.replaceChildren(new Option('(główny: bp/)', ''), ...folders.map(d => new Option(d, d)), new Option('+ nowy podfolder…', '__new'));
     folderSel.value = [...folderSel.options].some(o => o.value === keep) ? keep : '';
   }
 
-  existingSel.onchange = async () => {
-    const sel = existingSel.value;
-    if (!sel) { current = null; saved = ''; preview = null; ta.value = ''; nameEl.value = ''; folderSel.value = ''; updatePath(); hideMsg(); redraw(); return; }
+  function resetState() {
+    selectedRel = ''; current = null; saved = ''; preview = null; ta.value = ''; nameEl.value = ''; folderSel.value = '';
+    newFolderWrap.classList.add('hidden'); updatePath(); renderMenu();
+  }
+  async function pick(sel) {
+    ddClose();
+    if (!sel) { resetState(); hideMsg(); redraw(); return; }
     msg('info', 'Wczytuję…');
     try {
       const r = await fetch(`${gh(`bp/${sel}.txt`)}?cb=${Date.now()}`, { headers: { ...ghHeaders(store.get('gh_token')), Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
       if (!r.ok) throw new Error('GitHub: ' + r.status);
-      saved = await r.text(); preview = null; ta.value = ''; current = { rel: sel };
-      setFields(sel); hideMsg(); redraw();
+      saved = await r.text(); preview = null; ta.value = ''; current = { rel: sel }; selectedRel = sel;
+      setFields(sel); renderMenu(); hideMsg(); redraw();
     } catch (e) { msg('error', 'Nie wczytano: ' + e.message); }
-  };
+  }
+  async function removeBlueprints(what, isFolder) {
+    ddClose();
+    const token = store.get('gh_token') || tokenEl.value.trim();
+    if (!token) { tokenWrap.classList.remove('hidden'); tokenEl.focus(); return msg('error', 'Podaj token GitHub, żeby usuwać.'); }
+    hideHint();
+    try {
+      files = await fetchTree(ghHeaders(token));
+      const victims = isFolder ? files.filter(f => f.rel.startsWith(what + '/')) : files.filter(f => f.rel === what);
+      if (!victims.length) return msg('info', 'Nie ma już czego usuwać.');
+      const q = isFolder
+        ? `Usunąć folder „${what}” razem z ${victims.length} blueprintami? Embedy z tymi linkami przestaną działać.`
+        : `Usunąć blueprint „${what}”? Embed z tym linkiem przestanie działać.`;
+      if (!(await askConfirm(q + ' Pliki można odzyskać z historii gita.', 'Usuń'))) return;
+      msg('info', 'Usuwam…');
+      await deletePaths(victims.map(v => v.path), token, isFolder ? `Delete folder ${what}` : `Delete blueprint ${what}`);
+      store.set('gh_token', token); tokenEl.value = ''; syncToken();
+      if (current && victims.some(v => v.rel === current.rel)) { resetState(); redraw(); }
+      await loadList(selectedRel);
+      msg('ok', isFolder ? `Usunięto folder „${what}” (${victims.length}).` : `Usunięto „${what}”.`);
+    } catch (e) { onErr(e); }
+  }
   folderSel.onchange = () => { newFolderWrap.classList.toggle('hidden', folderSel.value !== '__new'); updatePath(); };
   nameEl.addEventListener('input', updatePath);
   newFolderEl.addEventListener('input', updatePath);
@@ -301,7 +409,10 @@ function initDrawer(rel, text, openNow) {
   $('btn-edit').onclick = () => setOpen(!isOpen());
   $('btn-close').onclick = () => setOpen(false);
   $('btn-reload').onclick = () => location.reload();
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) setOpen(false); });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!ddMenu.classList.contains('hidden')) ddClose(); else if (isOpen()) setOpen(false);
+  });
   window.addEventListener('error', e => { if (isOpen()) msg('error', 'Błąd: ' + e.message); });
 
   saveBtn.onclick = async () => {
@@ -348,6 +459,7 @@ function initDrawer(rel, text, openNow) {
   syncToken();
   if (rel) setFields(rel);
   updatePath();
+  renderMenu();
   loadList(rel);
   if (openNow) document.body.classList.add('open');
   if (!text) { showCard('info', 'Pusty widok', 'Wklej kod blueprintu w edytorze, żeby zobaczyć podgląd.'); }
